@@ -168,3 +168,26 @@ WHERE notificationType = 'Placement'
 
 ### Recommendation
 PostgreSQL is the best first choice for this system because the data is structured and the API needs are simple.
+
+## Stage 4
+
+### Problem
+Fetching notifications on every page load for every student causes too many DB reads.
+
+### Suggested Fix
+Use **cached unread counts + paginated notification fetches + real-time push**.
+
+### How to Improve Performance
+- Cache unread counts in Redis or memory.
+- Load only the latest notifications first.
+- Avoid fetching full history on every page load.
+- Use SSE/WebSocket to push new notifications instead of re-reading the table.
+
+### Tradeoffs
+- **Caching**: faster reads, but cache can become stale.
+- **Pagination**: less data per request, but users may need more clicks or scrolling.
+- **Real-time push**: best UX, but adds connection and server complexity.
+- **Background refresh**: keeps UI fresh, but data may not update instantly.
+
+### Best Practical Choice
+Use pagination for the inbox, cache the unread count, and push new notifications in real time. This gives good speed without making the system too complex.
