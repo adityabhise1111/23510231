@@ -1,26 +1,27 @@
 # Stage 1
 
-## Purpose
-Design a simple REST API for user notifications shown after login. The API must support listing notifications, tracking unread items, marking notifications as read, and providing a real-time delivery mechanism.
+### Goal
+Support user notifications after login with a small REST API and a real-time option.
 
-## Core Actions
-The notification platform should support these actions:
+### Core Actions
+- Get notifications
+- Get unread count
+- Mark one as read
+- Mark all as read
+- Create notification
+- Receive live updates
 
-1. Fetch notifications for the logged-in user.
-2. Fetch only unread notifications.
-3. Mark one notification as read.
-4. Mark all notifications as read.
-5. Get the unread notification count.
-6. Subscribe to real-time notification updates.
+### Endpoints
+```text
+GET  /api/v1/notifications
+GET  /api/v1/notifications/unread-count
+POST /api/v1/notifications/{notificationId}/read
+POST /api/v1/notifications/read-all
+POST /api/v1/notifications
+GET  /api/v1/notifications/stream
+```
 
-## REST API Endpoints
-
-### 1. Get notifications
-`GET /api/v1/notifications`
-
-Returns the authenticated user's notifications.
-
-#### Headers
+### Common Headers
 ```json
 {
   "Authorization": "Bearer <jwt-token>",
@@ -28,12 +29,7 @@ Returns the authenticated user's notifications.
 }
 ```
 
-#### Query Parameters
-- `status` optional, values: `all`, `unread`, `read`
-- `limit` optional, default `20`
-- `offset` optional, default `0`
-
-#### Response
+### Main Response Shape
 ```json
 {
   "data": [
@@ -46,196 +42,14 @@ Returns the authenticated user's notifications.
       "isRead": false,
       "createdAt": "2026-05-18T10:15:00Z",
       "readAt": null,
-      "metadata": {
-        "source": "system"
-      }
+      "metadata": {}
     }
-  ],
-  "pagination": {
-    "limit": 20,
-    "offset": 0,
-    "total": 1
-  }
+  ]
 }
 ```
 
-### 2. Get unread count
-`GET /api/v1/notifications/unread-count`
-
-Returns how many unread notifications the user has.
-
-#### Headers
-```json
-{
-  "Authorization": "Bearer <jwt-token>",
-  "Accept": "application/json"
-}
-```
-
-#### Response
-```json
-{
-  "unreadCount": 3
-}
-```
-
-### 3. Mark one notification as read
-`POST /api/v1/notifications/{notificationId}/read`
-
-Marks a single notification as read.
-
-#### Headers
-```json
-{
-  "Authorization": "Bearer <jwt-token>",
-  "Content-Type": "application/json"
-}
-```
-
-#### Request Body
-```json
-{}
-```
-
-#### Response
-```json
-{
-  "message": "Notification marked as read",
-  "data": {
-    "id": "n_123",
-    "isRead": true,
-    "readAt": "2026-05-18T10:20:00Z"
-  }
-}
-```
-
-### 4. Mark all notifications as read
-`POST /api/v1/notifications/read-all`
-
-Marks all notifications for the user as read.
-
-#### Headers
-```json
-{
-  "Authorization": "Bearer <jwt-token>",
-  "Content-Type": "application/json"
-}
-```
-
-#### Request Body
-```json
-{}
-```
-
-#### Response
-```json
-{
-  "message": "All notifications marked as read",
-  "updatedCount": 5
-}
-```
-
-### 5. Create notification
-`POST /api/v1/notifications`
-
-Creates a notification for a user. This is mainly for internal services.
-
-#### Headers
-```json
-{
-  "Authorization": "Bearer <service-token>",
-  "Content-Type": "application/json"
-}
-```
-
-#### Request Body
-```json
-{
-  "userId": "u_456",
-  "title": "New assignment",
-  "message": "Your task has been assigned",
-  "type": "success",
-  "metadata": {
-    "source": "scheduler"
-  }
-}
-```
-
-#### Response
-```json
-{
-  "message": "Notification created",
-  "data": {
-    "id": "n_123",
-    "userId": "u_456",
-    "title": "New assignment",
-    "message": "Your task has been assigned",
-    "type": "success",
-    "isRead": false,
-    "createdAt": "2026-05-18T10:30:00Z"
-  }
-}
-```
-
-## JSON Schema Fields
-
-### Notification object
-- `id`: unique notification id
-- `userId`: owner of the notification
-- `title`: short title
-- `message`: main notification text
-- `type`: one of `info`, `success`, `warning`, `error`
-- `isRead`: boolean read status
-- `createdAt`: ISO date string
-- `readAt`: ISO date string or `null`
-- `metadata`: optional object for extra context
-
-### Error response
-```json
-{
-  "error": {
-    "code": "UNAUTHORIZED",
-    "message": "Missing or invalid token"
-  }
-}
-```
-
-## Real-Time Notifications
-Use Server-Sent Events (SSE) for live updates.
-
-### Endpoint
-`GET /api/v1/notifications/stream`
-
-#### Headers
-```json
-{
-  "Authorization": "Bearer <jwt-token>",
-  "Accept": "text/event-stream"
-}
-```
-
-#### Behavior
-- The server keeps the connection open.
-- When a new notification is created, the server pushes an event to the client.
-- Event names should be stable and predictable, such as:
-  - `notification.created`
-  - `notification.updated`
-  - `notification.read`
-
-#### Example SSE event
-```json
-{
-  "event": "notification.created",
-  "data": {
-    "id": "n_123",
-    "title": "New message",
-    "message": "You have a new system message"
-  }
-}
-```
-
-### Real-Time Fallback
-If SSE is not available, the client can poll `GET /api/v1/notifications?status=unread` every few seconds.
+### Real-Time
+Use **Server-Sent Events (SSE)** on `/api/v1/notifications/stream` for live updates. If SSE is not available, poll `GET /api/v1/notifications?status=unread`.
 
 ## Plan
 1. Keep the endpoint names versioned under `/api/v1`.
@@ -243,3 +57,66 @@ If SSE is not available, the client can poll `GET /api/v1/notifications?status=u
 3. Store notifications with read state and timestamps.
 4. Use SSE for live updates and polling as fallback.
 5. Keep request and response JSON shapes small and consistent.
+
+## Stage 2
+
+### Storage Choice
+Use **PostgreSQL** because notifications need reliable storage, transactions, and fast filtered reads.
+
+### Schema
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  full_name VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE notifications (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  type VARCHAR(20) NOT NULL,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  read_at TIMESTAMP NULL,
+  metadata JSONB NULL
+);
+
+CREATE INDEX idx_notifications_user_created ON notifications (user_id, created_at DESC);
+CREATE INDEX idx_notifications_user_read ON notifications (user_id, is_read);
+```
+
+### Key Queries
+```sql
+-- Get notifications
+SELECT id, user_id, title, message, type, is_read, created_at, read_at, metadata
+FROM notifications
+WHERE user_id = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;
+
+-- Unread count
+SELECT COUNT(*) AS unread_count
+FROM notifications
+WHERE user_id = $1 AND is_read = FALSE;
+
+-- Mark one as read
+UPDATE notifications
+SET is_read = TRUE, read_at = NOW()
+WHERE id = $1 AND user_id = $2;
+
+-- Mark all as read
+UPDATE notifications
+SET is_read = TRUE, read_at = NOW()
+WHERE user_id = $1 AND is_read = FALSE;
+```
+
+### Growth Problems and Fixes
+- Large inboxes slow down reads: use indexes and pagination.
+- Read-all updates can be heavy: update only unread rows and run them in the background if needed.
+- Old data grows storage: archive or partition old notifications.
+
+### Recommendation
+PostgreSQL is the best first choice for this system because the data is structured and the API needs are simple.
