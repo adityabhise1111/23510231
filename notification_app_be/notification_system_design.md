@@ -237,3 +237,28 @@ worker process_job(job):
 
 ### Result
 This design is faster, safer, and easier to retry than doing everything in one loop.
+
+## Stage 6
+
+### Approach
+Fetch notifications from the protected API, rank them by type and recency, and keep only the top 10.
+
+### Priority Rules
+- `Placement` first
+- `Result` second
+- `Event` third
+- Newer notifications win when the type is the same
+
+### How Top 10 Is Kept Efficiently
+Use a small size-10 heap or sorted buffer.
+- Add each notification once.
+- Drop the lowest priority item when the buffer grows past 10.
+- This keeps memory small and avoids sorting the full list every time.
+
+### Why This Works
+- No database storage is needed.
+- The JWT is sent in the `Authorization: Bearer <token>` header.
+- The API response is used directly.
+
+### Code File
+See [priority_inbox.js](priority_inbox.js) for the actual implementation.

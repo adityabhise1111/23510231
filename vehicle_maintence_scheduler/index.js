@@ -73,6 +73,29 @@ function getBestVehicles(vehicles, budget) {
   };
 }
 
+function parseNotificationTime(value) {
+  const normalized = typeof value === "string" ? value.replace(" ", "T") : value;
+  const time = Date.parse(normalized);
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function getTopPriorityNotifications(notifications, topN = 10) {
+  const typeWeight = {
+    Placement: 3,
+    Result: 2,
+    Event: 1,
+  };
+
+  return notifications
+    .map((item) => ({
+      ...item,
+      priorityScore: (typeWeight[item.Type] || 0) * 1_000_000_000_000 + parseNotificationTime(item.Timestamp),
+    }))
+    .sort((left, right) => right.priorityScore - left.priorityScore)
+    .slice(0, topN)
+    .map(({ priorityScore, ...item }) => item);
+}
+
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
@@ -127,6 +150,34 @@ async function handleOptimize(req, res) {
 
 app.post("/optimize", handleOptimize);
 app.post("/optimise", handleOptimize);
+
+app.get("/notifications/priority-top10", async (req, res) => {
+  try {
+    const token = getBearerToken(req);
+
+    if (!token) {
+      await Log("backend", "error", "middleware", "Missing JWT token for priority notifications");
+      return res.status(401).json({ error: "Authorization bearer token is required" });
+    }
+
+    const notificationsData = await fetchData(
+      "http://4.224.186.213/evaluation-service/notifications",
+      "notifications",
+      token
+    );
+
+    const notifications = notificationsData?.notifications || [];
+    const topNotifications = getTopPriorityNotifications(notifications, 10);
+
+    return res.json({
+      totalNotifications: notifications.length,
+      topNotifications,
+    });
+  } catch (error) {
+    await Log("backend", "error", "middleware", `Priority API failed: ${error.message}`);
+    return res.status(500).json({ error: "Failed to fetch priority notifications" });
+  }
+});
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
