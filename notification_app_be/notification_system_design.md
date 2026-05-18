@@ -191,3 +191,49 @@ Use **cached unread counts + paginated notification fetches + real-time push**.
 
 ### Best Practical Choice
 Use pagination for the inbox, cache the unread count, and push new notifications in real time. This gives good speed without making the system too complex.
+
+## Stage 5
+
+### What Is Wrong With The Original Pseudocode?
+- It sends email and writes to DB inside one tight loop, so it is slow.
+- One failure can stop the rest of the batch.
+- Email, DB insert, and push are all mixed together, so retrying is hard.
+- It does not handle 50,000 students well.
+
+### What If 200 Emails Fail Midway?
+Do not stop the whole process. Mark failed students, retry them separately, and continue processing the rest.
+
+### Better Design
+Use a **queue / outbox** style flow:
+1. Save the notification request once.
+2. Create per-student jobs.
+3. A worker sends email and in-app notification.
+4. Retry failed jobs later.
+
+### Should DB Save and Email Happen Together?
+No. They should not be in one hard transaction.
+- DB write should be fast and reliable.
+- Email is external and can fail independently.
+- If both are tied together, the whole batch becomes fragile.
+
+### Revised Pseudocode
+```text
+function notify_all(student_ids, message):
+  batch_id = save_notification_request(message)
+
+  for student_id in student_ids:
+    enqueue_job(batch_id, student_id, message)
+
+worker process_job(job):
+  try:
+    send_email(job.student_id, job.message)
+    save_to_db(job.student_id, job.message)
+    push_to_app(job.student_id, job.message)
+    mark_job_done(job)
+  except error:
+    mark_job_failed(job)
+    retry_later(job)
+```
+
+### Result
+This design is faster, safer, and easier to retry than doing everything in one loop.
