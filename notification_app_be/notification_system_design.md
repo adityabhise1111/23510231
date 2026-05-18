@@ -118,5 +118,53 @@ WHERE user_id = $1 AND is_read = FALSE;
 - Read-all updates can be heavy: update only unread rows and run them in the background if needed.
 - Old data grows storage: archive or partition old notifications.
 
+## Stage 3
+
+### Is the Query Accurate?
+Mostly yes, but it should usually select only the needed columns instead of `*`.
+
+```sql
+SELECT id, studentID, notificationType, message, isRead, createdAt
+FROM notifications
+WHERE studentID = 1042 AND isRead = FALSE
+ORDER BY createdAt DESC;
+```
+
+### Why Is It Slow?
+- The table is large, so scanning unread rows can still be expensive.
+- `ORDER BY createdAt DESC` needs help from an index.
+- `SELECT *` reads extra data that the API may not need.
+
+### What Would I Change?
+- Select only required columns.
+- Add a composite index on `(studentID, isRead, createdAt DESC)`.
+- Keep pagination if the result set can grow large.
+
+### Likely Cost
+Without an index, the query can approach a full table scan, so the cost grows with the number of notifications. With the right composite index, it becomes much cheaper because the database can filter and sort more efficiently.
+
+### Is Indexing Every Column a Good Idea?
+No. Adding indexes on every column is not effective.
+- It slows down inserts, updates, and deletes.
+- It uses extra storage.
+- Most indexes will never be used.
+
+### Better Index
+```sql
+CREATE INDEX idx_notifications_student_read_created
+ON notifications (studentID, isRead, createdAt DESC);
+```
+
+### Placement Notifications in Last 7 Days
+```sql
+SELECT DISTINCT studentID
+FROM notifications
+WHERE notificationType = 'Placement'
+  AND createdAt >= NOW() - INTERVAL '7 days';
+```
+
+### Notes on `notification_type`
+`notificationType` should use the enum values `Event`, `Result`, and `Placement`.
+
 ### Recommendation
 PostgreSQL is the best first choice for this system because the data is structured and the API needs are simple.
